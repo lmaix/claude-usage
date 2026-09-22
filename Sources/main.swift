@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 
 enum FetchError: Error {
-    case notLoggedIn, missingScope, unauthorized, refreshFailed(String), http(Int), network(String), parse(String)
+    case notLoggedIn, missingScope, unauthorized, refreshFailed(String), rateLimited(TimeInterval), http(Int), network(String), parse(String)
 
     var message: String {
         switch self {
@@ -10,6 +10,7 @@ enum FetchError: Error {
         case .missingScope: return "Connexion sans accès au profil : reconnecte-toi via le Terminal"
         case .unauthorized: return "Session refusée (401) : reconnecte-toi via le Terminal"
         case .refreshFailed(let s): return "Renouvellement de session impossible : \(s)"
+        case .rateLimited(let s): return "Trop de requêtes (429), nouvel essai dans \(Int(s / 60)) min"
         case .http(let c): return "Erreur serveur HTTP \(c)"
         case .network(let s): return "Réseau : \(s)"
         case .parse(let s): return "Réponse inattendue : \(s)"
@@ -61,6 +62,11 @@ final class UsageFetcher {
                     }
                 }
                 return done(.failure(.unauthorized))
+            }
+            if http.statusCode == 429 {
+                let retry = (http.value(forHTTPHeaderField: "Retry-After")).flatMap { Double($0) } ?? 0
+                Log.write("HTTP 429 (Retry-After: \(Int(retry)) s)")
+                return done(.failure(.rateLimited(retry)))
             }
             guard (200..<300).contains(http.statusCode) else {
                 Log.write("HTTP \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
@@ -123,6 +129,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var snapshot: UsageSnapshot?
     private var lastError: FetchError?
+    private var nextAllowedFetch = Date.distantPast
+    private var backoff: TimeInterval = 5 * 60
+    static let pollInterval: TimeInterval = 3 * 60
+    static let cacheURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/ClaudeUsageBar/last-usage.json")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -134,21 +145,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Keychain.deleteLegacyItem()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(refresh),
                                                           name: NSWorkspace.didWakeNotification, object: nil)
-        timer = Timer.scheduledTimer(timeInterval: 60, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
-        timer?.tolerance = 10
+        timer = Timer.scheduledTimer(timeInterval: 30, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+        timer?.tolerance = 5
+        loadCache()
         refresh()
         if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
     }
 
+    /// Every 30 s: fetch only when the poll interval (or a 429 backoff) has elapsed.
+    @objc private func tick() {
+        if Date() >= nextAllowedFetch { refresh() }
+    }
+
     @objc func refresh() {
+        nextAllowedFetch = Date().addingTimeInterval(Self.pollInterval)
         fetcher.fetch { [weak self] result in
             guard let self = self else { return }
             switch result {
-            case .success(let s): self.snapshot = s; self.lastError = nil
-            case .failure(let e): self.lastError = e
+            case .success(let s):
+                self.snapshot = s; self.lastError = nil; self.backoff = 5 * 60
+                self.saveCache(s)
+            case .failure(.rateLimited(let retryAfter)):
+                // Google-style backoff: honor Retry-After, else 5, 10, 20… minutes up to 30.
+                let wait = retryAfter > 0 ? retryAfter : self.backoff
+                self.backoff = min(self.backoff * 2, 30 * 60)
+                self.nextAllowedFetch = Date().addingTimeInterval(wait)
+                self.lastError = .rateLimited(wait)
+            case .failure(let e):
+                self.lastError = e
             }
             self.render()
         }
+    }
+
+    // MARK: - Cache (so a restart shows the last known bars instead of "C!")
+
+    private func saveCache(_ s: UsageSnapshot) {
+        let obj: [String: Any] = [
+            "fetchedAt": s.fetchedAt.timeIntervalSince1970,
+            "windows": s.windows.map { ["key": $0.key, "label": $0.label, "percent": $0.percent, "resetsAt": $0.resetsAt?.timeIntervalSince1970 ?? 0] },
+        ]
+        guard let d = try? JSONSerialization.data(withJSONObject: obj) else { return }
+        try? FileManager.default.createDirectory(at: Self.cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? d.write(to: Self.cacheURL, options: .atomic)
+    }
+
+    private func loadCache() {
+        guard let d = try? Data(contentsOf: Self.cacheURL),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let fetched = obj["fetchedAt"] as? Double,
+              let ws = obj["windows"] as? [[String: Any]] else { return }
+        let windows = ws.compactMap { w -> UsageWindow? in
+            guard let key = w["key"] as? String, let label = w["label"] as? String, let pct = w["percent"] as? Double else { return nil }
+            let r = (w["resetsAt"] as? Double) ?? 0
+            return UsageWindow(key: key, label: label, percent: pct, resetsAt: r > 0 ? Date(timeIntervalSince1970: r) : nil)
+        }
+        guard !windows.isEmpty else { return }
+        snapshot = UsageSnapshot(windows: windows, extra: nil, fetchedAt: Date(timeIntervalSince1970: fetched))
+        render()
     }
 
     private func render() {
