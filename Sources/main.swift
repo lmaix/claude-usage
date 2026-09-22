@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastError: FetchError?
     private var nextAllowedFetch = Date.distantPast
     private var backoff: TimeInterval = 5 * 60
-    static let pollInterval: TimeInterval = 3 * 60
+    static let pollInterval: TimeInterval = 5 * 60
     static let cacheURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/ClaudeUsageBar/last-usage.json")
 
