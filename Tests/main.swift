@@ -10,18 +10,24 @@ let now = ISO8601DateFormatter().date(from: "2026-09-22T09:00:00Z")!
 let json = """
 {"five_hour":{"utilization":2.0,"resets_at":"2026-09-22T12:59:59.651Z"},
  "seven_day":{"utilization":28,"resets_at":"2026-09-24T18:59:59.651Z"},
- "seven_day_fable":{"utilization":45.5,"resets_at":"2026-09-24T18:59:59Z"},
  "seven_day_opus":null,
  "seven_day_overage_included":{"utilization":0,"resets_at":null},
+ "nimbus_quill":{"utilization":0,"resets_at":"2026-09-24T18:59:59Z"},
+ "limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"percent":48,"resets_at":1758740399},
+           {"kind":"daily","percent":1}],
  "extra_usage":{"is_enabled":true,"used_credits":0,"monthly_limit":1000,"utilization":0}}
 """.data(using: .utf8)!
 let snap = try! UsageParser.parse(json, now: now)
-check(snap.windows.map(\.key) == ["five_hour", "seven_day", "seven_day_fable"], "fenêtres : 5h, hebdo, fable (null et overage ignorés)")
+check(snap.windows.map(\.key) == ["five_hour", "seven_day", "seven_day_fable"], "fenêtres : 5h, hebdo, fable (null, overage et clé inconnue ignorés)")
 check(snap.fiveHour?.percent == 2.0, "5h = 2 %")
-check(snap.weeklyFable?.percent == 45.5 && snap.weeklyFable?.label == "Hebdo · Fable", "hebdo Fable détectée et libellée")
+check(snap.weeklyFable?.percent == 48 && snap.weeklyFable?.label == "Hebdo · Fable", "hebdo Fable lue dans limits[] et libellée")
 check(snap.secondBar?.key == "seven_day_fable", "2e barre = Fable quand disponible")
-check(snap.fiveHour?.resetsAt != nil && snap.weeklyFable?.resetsAt != nil, "dates avec et sans fractions")
+check(snap.fiveHour?.resetsAt != nil, "date ISO avec fractions")
+check(snap.weeklyFable?.resetsAt == Date(timeIntervalSince1970: 1758740399), "date epoch secondes dans limits[]")
 check(snap.extra == ExtraUsage(enabled: true, usedCredits: 0, monthlyLimit: 1000), "extra usage")
+
+let legacy = try! UsageParser.parse("{\"five_hour\":{\"utilization\":1},\"seven_day_fable\":{\"utilization\":45.5,\"resets_at\":\"2026-09-24T18:59:59Z\"}}".data(using: .utf8)!, now: now)
+check(legacy.weeklyFable?.percent == 45.5 && legacy.weeklyFable?.resetsAt != nil, "clé seven_day_fable de premier niveau toujours acceptée")
 
 let noFable = try! UsageParser.parse("{\"five_hour\":{\"utilization\":5},\"seven_day\":{\"utilization\":30}}".data(using: .utf8)!, now: now)
 check(noFable.secondBar?.key == "seven_day", "2e barre = hebdo global sans Fable")

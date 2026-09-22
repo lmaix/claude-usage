@@ -70,19 +70,11 @@ enum UsageParser {
             throw UsageParseError.invalidJSON
         }
         var windows: [UsageWindow] = []
-        // Top-level windows: five_hour, seven_day, seven_day_<model>. Anything else (internal keys) is ignored.
-        for (key, value) in dict where key == "five_hour" || key.hasPrefix("seven_day") {
-            guard !ignoredKeys.contains(key), let w = value as? [String: Any],
+        for (key, value) in dict where !ignoredKeys.contains(key) {
+            guard let w = value as? [String: Any],
                   let util = number(w["utilization"]) ?? number(w["used_percentage"]) else { continue }
-            windows.append(UsageWindow(key: key, label: label(for: key), percent: util, resetsAt: parseDate(w["resets_at"])))
-        }
-        // Per-model weekly limits: "limits": [{kind: "weekly_scoped", scope: {model: {display_name}}, percent, resets_at}]
-        for item in (dict["limits"] as? [[String: Any]]) ?? [] {
-            guard item["kind"] as? String == "weekly_scoped",
-                  let model = ((item["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String,
-                  let pct = number(item["percent"]) ?? number(item["utilization"]) else { continue }
-            let key = "seven_day_" + model.lowercased().replacingOccurrences(of: " ", with: "_")
-            windows.append(UsageWindow(key: key, label: "Hebdo · \(model)", percent: pct, resetsAt: parseDate(item["resets_at"])))
+            let resets = (w["resets_at"] as? String).flatMap(parseDate)
+            windows.append(UsageWindow(key: key, label: label(for: key), percent: util, resetsAt: resets))
         }
         guard !windows.isEmpty else { throw UsageParseError.noWindows }
         let order = ["five_hour": 0, "seven_day": 1]
@@ -97,10 +89,7 @@ enum UsageParser {
         return UsageSnapshot(windows: windows, extra: extra, fetchedAt: now)
     }
 
-    /// Accepts an ISO 8601 string or a Unix timestamp in seconds (the `limits` array uses the latter).
-    static func parseDate(_ v: Any?) -> Date? {
-        if let n = number(v) { return n > 0 ? Date(timeIntervalSince1970: n) : nil }
-        guard let s = v as? String else { return nil }
+    static func parseDate(_ s: String) -> Date? {
         let f1 = ISO8601DateFormatter(); f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f1.date(from: s) { return d }
         let f2 = ISO8601DateFormatter(); f2.formatOptions = [.withInternetDateTime]
