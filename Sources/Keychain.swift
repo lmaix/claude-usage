@@ -45,21 +45,43 @@ struct ClaudeCodeCredentials {
 
 enum Keychain {
     static let claudeCodeService = "Claude Code-credentials"
-    static let legacyService = "ClaudeUsageBar"
+    static let ownService = "ClaudeUsageBar"
+    static let ownAccount = "session"
+    static let legacyService = "ClaudeUsageBar"   // old setup-token item used account "oauth-token"
 
-    static func claudeCodeCredentials() -> ClaudeCodeCredentials? {
-        guard let data = read(service: claudeCodeService, account: NSUserName()) else { return nil }
-        return ClaudeCodeCredentials.parse(data)
+    /// The app's own copy of the session. Claude Code's item is read once to bootstrap it and never written:
+    /// modifying that item changes its access list and makes Claude Code's `security` tool prompt at every launch.
+    static func credentials() -> ClaudeCodeCredentials? {
+        if let data = read(service: ownService, account: ownAccount), let c = ClaudeCodeCredentials.parse(data) { return c }
+        guard let data = read(service: claudeCodeService, account: NSUserName()),
+              let c = ClaudeCodeCredentials.parse(data) else { return nil }
+        writeCredentials(data)
+        return c
     }
 
     @discardableResult
-    static func writeClaudeCodeCredentials(_ data: Data) -> Bool {
-        let query: [String: Any] = [
+    static func writeCredentials(_ data: Data) -> Bool {
+        let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: claudeCodeService,
-            kSecAttrAccount as String: NSUserName(),
+            kSecAttrService as String: ownService,
+            kSecAttrAccount as String: ownAccount,
         ]
-        return SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecSuccess
+        let st = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if st == errSecSuccess { return true }
+        guard st == errSecItemNotFound else { return false }
+        var add = base
+        add[kSecValueData as String] = data
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+    }
+
+    /// Drops the app's own copy so the next fetch re-bootstraps from Claude Code's login (after `claude auth login`).
+    static func forgetOwnSession() {
+        let q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: ownService,
+            kSecAttrAccount as String: ownAccount,
+        ]
+        SecItemDelete(q as CFDictionary)
     }
 
     /// Removes the token item an earlier version of this app stored (setup-token, no longer used).
@@ -67,6 +89,7 @@ enum Keychain {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: legacyService,
+            kSecAttrAccount as String: "oauth-token",
         ]
         SecItemDelete(query as CFDictionary)
     }

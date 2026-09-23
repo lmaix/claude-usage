@@ -25,7 +25,7 @@ final class UsageFetcher {
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"   // Claude Code's public OAuth client id
 
     func fetch(completion: @escaping (Result<UsageSnapshot, FetchError>) -> Void) {
-        guard let creds = Keychain.claudeCodeCredentials() else { return completion(.failure(.notLoggedIn)) }
+        guard let creds = Keychain.credentials() else { return completion(.failure(.notLoggedIn)) }
         guard creds.hasProfileScope else { return completion(.failure(.missingScope)) }
         if creds.isExpiring(within: 120), creds.refreshToken != nil {
             refresh(creds) { [weak self] r in
@@ -61,6 +61,7 @@ final class UsageFetcher {
                         }
                     }
                 }
+                Keychain.forgetOwnSession()   // next fetch re-reads Claude Code's login
                 return done(.failure(.unauthorized))
             }
             if http.statusCode == 429 {
@@ -104,7 +105,7 @@ final class UsageFetcher {
             }
             let expiresIn = (obj["expires_in"] as? Double) ?? 3600
             guard let json = creds.updated(accessToken: access, refreshToken: obj["refresh_token"] as? String, expiresIn: expiresIn),
-                  Keychain.writeClaudeCodeCredentials(json),
+                  Keychain.writeCredentials(json),
                   let fresh = ClaudeCodeCredentials.parse(json) else {
                 return done(.failure(.refreshFailed("écriture Trousseau")))
             }
