@@ -1,4 +1,4 @@
-# ClaudeUsageBar
+# Claude Usage
 
 A tiny macOS menu bar app that shows how much of your Claude plan you have used:
 two mini progress bars with their percentage, and a menu with every usage
@@ -30,7 +30,7 @@ cd claude-usage
 ./build.sh
 ```
 
-`build.sh` runs the tests, compiles `ClaudeUsageBar.app`, installs it in
+`build.sh` runs the tests, compiles `ClaudeUsage.app`, installs it in
 `~/Applications`, launches it and registers it to start at login. No other
 dependency.
 
@@ -95,21 +95,21 @@ General → Login Items**.
   `Retry-After`, otherwise backs off 5, 10, 20… up to 30 minutes.
 - The last result is cached, so a restart shows your bars right away.
 - The app reads Claude Code's login once and keeps its own copy in the Keychain
-  (service `ClaudeUsageBar`); it never modifies Claude Code's item. All Keychain
+  (service `ClaudeUsage`); it never modifies Claude Code's item. All Keychain
   access goes through `/usr/bin/security`, the tool Claude Code itself uses,
   which is why there is no password prompt.
 - When the session is about to expire (or on 401) the app renews it with the
   OAuth refresh token and updates its own copy.
 - Nothing is sent anywhere except to Anthropic.
-- Log: `~/Library/Logs/ClaudeUsageBar.log`.
+- Log: `~/Library/Logs/ClaudeUsage.log`.
 
 ## Uninstall
 
 ```bash
-pkill -x ClaudeUsageBar
-rm -rf ~/Applications/ClaudeUsageBar.app
-security delete-generic-password -s ClaudeUsageBar
-rm -rf ~/Library/Application\ Support/ClaudeUsageBar ~/Library/Logs/ClaudeUsageBar.log
+pkill -x ClaudeUsage
+rm -rf ~/Applications/ClaudeUsage.app
+security delete-generic-password -s ClaudeUsage
+rm -rf ~/Library/Application\ Support/ClaudeUsage ~/Library/Logs/ClaudeUsage.log
 ```
 
 ## Disclaimer

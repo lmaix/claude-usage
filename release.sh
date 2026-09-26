@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build a signed, notarized, universal ClaudeUsageBar.app and zip it for a GitHub release.
+# Build a signed, notarized, universal ClaudeUsage.app and zip it for a GitHub release.
 #
 #   ./release.sh 1.1
 #
@@ -17,8 +17,8 @@ IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n '
 [[ -n "$IDENTITY" ]] || { echo "✗ No 'Developer ID Application' certificate in the Keychain (see the header of this script)."; exit 1; }
 
 OUT="dist"
-APP="$OUT/ClaudeUsageBar.app"
-ZIP="$OUT/ClaudeUsageBar-$VERSION.zip"
+APP="$OUT/ClaudeUsage.app"
+ZIP="$OUT/ClaudeUsage-$VERSION.zip"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -29,15 +29,16 @@ swiftc -O -o "$TMP/tests" Sources/UsageModel.swift Sources/BarRenderer.swift Sou
 echo "▸ Universal build $VERSION"
 rm -rf "$OUT" && mkdir -p "$APP/Contents/MacOS"
 for arch in arm64 x86_64; do
-    swiftc -O -target "$arch-apple-macos13.0" -o "$TMP/ClaudeUsageBar-$arch" Sources/*.swift
+    swiftc -O -target "$arch-apple-macos13.0" -o "$TMP/ClaudeUsage-$arch" Sources/*.swift
 done
-lipo -create -output "$APP/Contents/MacOS/ClaudeUsageBar" "$TMP"/ClaudeUsageBar-{arm64,x86_64}
+lipo -create -output "$APP/Contents/MacOS/ClaudeUsage" "$TMP"/ClaudeUsage-{arm64,x86_64}
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources" && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD)" "$APP/Contents/Info.plist"
 
 echo "▸ Signing with $IDENTITY"
-codesign --force --options runtime --timestamp --entitlements Resources/ClaudeUsageBar.entitlements \
+codesign --force --options runtime --timestamp --entitlements Resources/ClaudeUsage.entitlements \
     --sign "$IDENTITY" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 

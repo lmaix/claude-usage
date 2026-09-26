@@ -47,9 +47,9 @@ struct ClaudeCodeCredentials {
 /// across rebuilds and updates (an item created through SecItem is tied to the app's signature and prompts when it changes).
 enum Keychain {
     static let claudeCodeService = "Claude Code-credentials"
-    static let ownService = "ClaudeUsageBar"
+    static let ownService = "ClaudeUsage"
     static let ownAccount = "session"
-    static let legacyService = "ClaudeUsageBar"   // old setup-token item used account "oauth-token"
+    static let legacyService = "ClaudeUsageBar"   // items stored before the app was renamed ClaudeUsage
 
     /// The app's own copy of the session. Claude Code's item is read once to bootstrap it and never written:
     /// modifying that item changes its access list and makes Claude Code's `security` tool prompt at every launch.
@@ -76,9 +76,11 @@ enum Keychain {
         _ = security(["delete-generic-password", "-s", ownService, "-a", ownAccount])
     }
 
-    /// Removes the token item an earlier version of this app stored (setup-token, no longer used).
+    /// Removes items stored by earlier versions: the setup-token item and the session copy from before the rename.
     static func deleteLegacyItem() {
-        _ = security(["delete-generic-password", "-s", legacyService, "-a", "oauth-token"])
+        for account in ["oauth-token", "session"] {
+            _ = security(["delete-generic-password", "-s", legacyService, "-a", account])
+        }
     }
 
     private static func read(service: String, account: String) -> Data? {

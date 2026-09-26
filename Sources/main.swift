@@ -124,7 +124,7 @@ final class UsageFetcher {
 }
 
 enum Log {
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/ClaudeUsageBar.log")
+    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/ClaudeUsage.log")
     static func write(_ s: String) {
         let line = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n"
         if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nextAllowedFetch = Date.distantPast
     private var backoff: TimeInterval = 5 * 60
     static let pollInterval: TimeInterval = 10 * 60
-    /// `open ClaudeUsageBar.app --args --simulate-signed-out` shows the first-run state without touching the Keychain.
+    /// `open ClaudeUsage.app --args --simulate-signed-out` shows the first-run state without touching the Keychain.
     /// Cleared by "Sign in with Terminal…", so the simulated first run continues like a real one.
     private var simulateSignedOut = CommandLine.arguments.contains("--simulate-signed-out")
     /// Runs every second after "Sign in with Terminal…" until the login lands (or 10 minutes pass).
@@ -166,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.barPairKey) }
     }
     static let cacheURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/ClaudeUsageBar/last-usage.json")
+        .appendingPathComponent("Library/Application Support/ClaudeUsage/last-usage.json")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
