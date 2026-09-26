@@ -4,6 +4,14 @@ import ServiceManagement
 enum FetchError: Error {
     case notLoggedIn, missingScope, unauthorized, refreshFailed(String), rateLimited(TimeInterval), http(Int), network(String), parse(String)
 
+    /// Errors fixed by logging in again, as opposed to network or server trouble that clears up by itself.
+    var needsSignIn: Bool {
+        switch self {
+        case .notLoggedIn, .missingScope, .unauthorized, .refreshFailed: return true
+        default: return false
+        }
+    }
+
     var message: String {
         switch self {
         case .notLoggedIn: return "Not signed in: use “Sign in with Terminal…”"
@@ -133,6 +141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nextAllowedFetch = Date.distantPast
     private var backoff: TimeInterval = 5 * 60
     static let pollInterval: TimeInterval = 10 * 60
+    /// `open ClaudeUsageBar.app --args --simulate-signed-out` shows the first-run state without touching the Keychain.
+    /// Cleared by "Sign in with Terminal…", so the simulated first run continues like a real one.
+    private var simulateSignedOut = CommandLine.arguments.contains("--simulate-signed-out")
+    /// Set by "Sign in with Terminal…": for the next 10 minutes, check every tick whether the login has landed.
+    private var awaitingSignInUntil = Date.distantPast
+    /// Access token of the last sign-in failure, so a stale login is not retried against the API every tick.
+    private var failedAccessToken: String?
     static let barPairKey = "barPair"
     static let barStyleKey = "barStyle"
     static let ringSetKey = "ringSet"
@@ -163,18 +178,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                           name: NSWorkspace.didWakeNotification, object: nil)
         timer = Timer.scheduledTimer(timeInterval: 30, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
         timer?.tolerance = 5
-        loadCache()
+        if !simulateSignedOut { loadCache() }
         refresh()
-        if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
+        if !simulateSignedOut, SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
     }
 
     /// Every 30 s: fetch only when the poll interval (or a 429 backoff) has elapsed.
     @objc private func tick() {
-        if Date() >= nextAllowedFetch { refresh() }
+        if Date() >= nextAllowedFetch { return refresh() }
+        if lastError?.needsSignIn == true, Date() < awaitingSignInUntil, !simulateSignedOut,
+           let token = Keychain.credentials()?.accessToken, token != failedAccessToken {
+            refresh()
+        }
     }
 
     @objc func refresh() {
         nextAllowedFetch = Date().addingTimeInterval(Self.pollInterval)
+        if simulateSignedOut { lastError = .notLoggedIn; render(); return }
         fetcher.fetch { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -189,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastError = .rateLimited(wait)
             case .failure(let e):
                 self.lastError = e
+                if e.needsSignIn { self.failedAccessToken = Keychain.credentials()?.accessToken }
             }
             self.render()
         }
@@ -259,20 +280,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let e = lastError {
             menu.addItem(NSMenuItem(title: "⚠︎ \(e.message)", action: nil, keyEquivalent: ""))
+            if e.needsSignIn {
+                menu.addItem(withTitle: "Sign in with Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
+            }
         }
         menu.addItem(.separator())
-        addSection("Style", to: menu, choices: BarStyle.allCases.map { ($0.title, $0.rawValue, $0 == barStyle) },
-                   action: #selector(chooseStyle(_:)))
-        switch barStyle {
-        case .rings:
-            addSection("Menu bar shows", to: menu, choices: RingSet.allCases.map { ($0.title, $0.rawValue, $0 == ringSet) },
-                       action: #selector(chooseRingSet(_:)))
-        case .bars:
-            addSection("Menu bar shows", to: menu, choices: BarPair.allCases.map { ($0.title, $0.rawValue, $0 == barPair) },
-                       action: #selector(choosePair(_:)))
-        }
-        if lastError != nil {
-            menu.addItem(withTitle: "Sign in with Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
+        // Display settings only make sense once there is usage to display.
+        if snapshot != nil {
+            addSection("Style", to: menu, choices: BarStyle.allCases.map { ($0.title, $0.rawValue, $0 == barStyle) },
+                       action: #selector(chooseStyle(_:)))
+            switch barStyle {
+            case .rings:
+                addSection("Menu bar shows", to: menu, choices: RingSet.allCases.map { ($0.title, $0.rawValue, $0 == ringSet) },
+                           action: #selector(chooseRingSet(_:)))
+            case .bars:
+                addSection("Menu bar shows", to: menu, choices: BarPair.allCases.map { ($0.title, $0.rawValue, $0 == barPair) },
+                           action: #selector(choosePair(_:)))
+            }
         }
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
@@ -320,6 +344,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opens Terminal and runs `claude auth login`; the CLI stores the login in the Keychain, which we then read.
     @objc private func loginInTerminal() {
+        simulateSignedOut = false
+        awaitingSignInUntil = Date().addingTimeInterval(10 * 60)
         let script = """
         tell application "Terminal"
             activate
