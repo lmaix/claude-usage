@@ -1,28 +1,39 @@
+<img src="screenshots/icon.png" width="96" alt="">
+
 # Claude Usage
 
 A tiny macOS menu bar app that shows how much of your Claude plan you have used:
-two mini progress bars with their percentage, and a menu with every usage
-window, the time left before each reset and your extra usage.
-
-![Menu bar](screenshots/menubar.png)
+one ring per limit (5-hour session, weekly, weekly Fable), and a menu with every
+usage window and the time left before each reset.
 
 ![Menu](screenshots/menu.png)
 
-Bars go from green to neon green below 60 %, orange to yellow from 60 to 85 %,
-and red to pink above 85 %:
+Prefer bars? Switch the style in the menu:
 
-![Levels](screenshots/levels.png)
+![Bars style](screenshots/menubar-bars.png)
+
+Colors follow your usage: green to neon green below 60 %, orange to yellow from
+60 to 85 %, red to pink above 85 %.
 
 ## Requirements
 
-- macOS 13 or later
-- Xcode or the Xcode Command Line Tools (`xcode-select --install`), to compile
+- macOS 13 or later, Apple silicon or Intel
 - A Claude Pro or Max subscription, logged in with [Claude Code](https://claude.com/claude-code)
 
 No API key is needed, and none is stored in this repository: the app reuses your
 own Claude Code login from the macOS Keychain.
 
 ## Installation
+
+1. Download **ClaudeUsage-x.y.zip** from the
+   [latest release](https://github.com/lmaix/claude-usage/releases/latest).
+2. Unzip it and drag **ClaudeUsage.app** to your **Applications** folder.
+3. Open it. The app is signed and notarized by Apple, so it opens without any
+   warning. It starts at login automatically.
+
+### Build from source
+
+Requires Xcode or the Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash
 git clone https://github.com/lmaix/claude-usage.git
@@ -31,8 +42,8 @@ cd claude-usage
 ```
 
 `build.sh` runs the tests, compiles `ClaudeUsage.app`, installs it in
-`~/Applications`, launches it and registers it to start at login. No other
-dependency.
+`~/Applications` and launches it. `./release.sh <version>` builds the signed,
+notarized universal zip published in the releases.
 
 ## First launch
 
@@ -59,6 +70,8 @@ Everything is in the menu that opens when you click the icon.
 
 ![Rings](screenshots/rings.png)
 
+![Bars](screenshots/levels.png)
+
 ### Menu bar shows
 
 Pick which limits appear in the menu bar. With **Rings**:
@@ -84,7 +97,7 @@ available limit in its place.
 
 ### Launch at login
 
-Enabled automatically by `build.sh`. To turn it off: **System Settings →
+Enabled automatically on first launch. To turn it off: **System Settings →
 General → Login Items**.
 
 ## How it works
@@ -107,7 +120,7 @@ General → Login Items**.
 
 ```bash
 pkill -x ClaudeUsage
-rm -rf ~/Applications/ClaudeUsage.app
+rm -rf /Applications/ClaudeUsage.app ~/Applications/ClaudeUsage.app
 security delete-generic-password -s ClaudeUsage
 rm -rf ~/Library/Application\ Support/ClaudeUsage ~/Library/Logs/ClaudeUsage.log
 ```
