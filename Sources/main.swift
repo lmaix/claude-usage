@@ -6,14 +6,14 @@ enum FetchError: Error {
 
     var message: String {
         switch self {
-        case .notLoggedIn: return "Non connecté : « Se connecter dans le Terminal… »"
-        case .missingScope: return "Connexion sans accès au profil : reconnecte-toi via le Terminal"
-        case .unauthorized: return "Session refusée (401) : reconnecte-toi via le Terminal"
-        case .refreshFailed(let s): return "Renouvellement de session impossible : \(s)"
-        case .rateLimited(let s): return "Trop de requêtes (429), nouvel essai dans \(Int(s / 60)) min"
-        case .http(let c): return "Erreur serveur HTTP \(c)"
-        case .network(let s): return "Réseau : \(s)"
-        case .parse(let s): return "Réponse inattendue : \(s)"
+        case .notLoggedIn: return "Not signed in: use “Sign in with Terminal…”"
+        case .missingScope: return "Login lacks profile access: sign in again with Terminal"
+        case .unauthorized: return "Session rejected (401): sign in again with Terminal"
+        case .refreshFailed(let s): return "Could not renew the session: \(s)"
+        case .rateLimited(let s): return "Too many requests (429), retrying in \(Int(s / 60)) min"
+        case .http(let c): return "Server error HTTP \(c)"
+        case .network(let s): return "Network: \(s)"
+        case .parse(let s): return "Unexpected response: \(s)"
         }
     }
 }
@@ -50,7 +50,7 @@ final class UsageFetcher {
         URLSession.shared.dataTask(with: req) { data, resp, err in
             let done: (Result<UsageSnapshot, FetchError>) -> Void = { r in DispatchQueue.main.async { completion(r) } }
             if let err = err { return done(.failure(.network(err.localizedDescription))) }
-            guard let http = resp as? HTTPURLResponse, let data = data else { return done(.failure(.network("réponse vide"))) }
+            guard let http = resp as? HTTPURLResponse, let data = data else { return done(.failure(.network("empty response"))) }
             if http.statusCode == 401 || http.statusCode == 403 {
                 Log.write("HTTP \(http.statusCode) on usage: \(String(data: data, encoding: .utf8) ?? "")")
                 if let creds = creds, creds.refreshToken != nil {
@@ -97,7 +97,7 @@ final class UsageFetcher {
             if let err = err { return done(.failure(.network(err.localizedDescription))) }
             guard let http = resp as? HTTPURLResponse, let data = data,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return done(.failure(.refreshFailed("réponse vide")))
+                return done(.failure(.refreshFailed("empty response")))
             }
             guard (200..<300).contains(http.statusCode), let access = obj["access_token"] as? String else {
                 Log.write("Refresh HTTP \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
@@ -107,9 +107,9 @@ final class UsageFetcher {
             guard let json = creds.updated(accessToken: access, refreshToken: obj["refresh_token"] as? String, expiresIn: expiresIn),
                   Keychain.writeCredentials(json),
                   let fresh = ClaudeCodeCredentials.parse(json) else {
-                return done(.failure(.refreshFailed("écriture Trousseau")))
+                return done(.failure(.refreshFailed("Keychain write failed")))
             }
-            Log.write("Session renouvelée, expire dans \(Int(expiresIn / 60)) min")
+            Log.write("Session renewed, expires in \(Int(expiresIn / 60)) min")
             done(.success(fresh))
         }.resume()
     }
@@ -133,6 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nextAllowedFetch = Date.distantPast
     private var backoff: TimeInterval = 5 * 60
     static let pollInterval: TimeInterval = 10 * 60
+    static let barPairKey = "barPair"
+    private var barPair: BarPair {
+        get { UserDefaults.standard.string(forKey: Self.barPairKey).flatMap(BarPair.init(rawValue:)) ?? .default }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.barPairKey) }
+    }
     static let cacheURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/ClaudeUsageBar/last-usage.json")
 
@@ -197,9 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let fetched = obj["fetchedAt"] as? Double,
               let ws = obj["windows"] as? [[String: Any]] else { return }
         let windows = ws.compactMap { w -> UsageWindow? in
-            guard let key = w["key"] as? String, let label = w["label"] as? String, let pct = w["percent"] as? Double else { return nil }
+            guard let key = w["key"] as? String, let pct = w["percent"] as? Double else { return nil }
             let r = (w["resetsAt"] as? Double) ?? 0
-            return UsageWindow(key: key, label: label, percent: pct, resetsAt: r > 0 ? Date(timeIntervalSince1970: r) : nil)
+            return UsageWindow(key: key, label: UsageParser.label(for: key), percent: pct, resetsAt: r > 0 ? Date(timeIntervalSince1970: r) : nil)
         }
         guard !windows.isEmpty else { return }
         snapshot = UsageSnapshot(windows: windows, extra: nil, fetchedAt: Date(timeIntervalSince1970: fetched))
@@ -209,8 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func render() {
         guard let button = statusItem.button else { return }
         if let s = snapshot {
-            button.image = BarRenderer.statusImage(fiveHour: s.fiveHour?.percent ?? 0, weekly: s.secondBar?.percent ?? 0)
-            button.toolTip = s.windows.map { "\($0.label) : \(Int($0.percent.rounded())) %" }.joined(separator: "\n")
+            let bars = barPair.windows(in: s)
+            button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0)
+            button.toolTip = s.windows.map { "\($0.label): \(Int($0.percent.rounded()))%" }.joined(separator: "\n")
         } else {
             button.image = BarRenderer.errorImage()
             button.toolTip = lastError?.message
@@ -223,28 +229,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         if let s = snapshot {
             for w in s.windows {
-                let reset = w.resetsAt.map { " · reset dans \(TimeFormat.remaining(until: $0))" } ?? ""
-                let item = NSMenuItem(title: "\(w.label) : \(Int(w.percent.rounded())) %\(reset)", action: nil, keyEquivalent: "")
+                let reset = w.resetsAt.map { " · resets in \(TimeFormat.remaining(until: $0))" } ?? ""
+                let item = NSMenuItem(title: "\(w.label): \(Int(w.percent.rounded()))%\(reset)", action: nil, keyEquivalent: "")
                 item.image = swatch(for: w.percent)
                 menu.addItem(item)
             }
             if let e = s.extra, e.enabled {
                 let used = String(format: "%.2f", e.usedCredits / 100), limit = String(format: "%.2f", e.monthlyLimit / 100)
-                menu.addItem(NSMenuItem(title: "Usage extra : \(used) / \(limit) ce mois", action: nil, keyEquivalent: ""))
+                menu.addItem(NSMenuItem(title: "Extra usage: \(used) / \(limit) this month", action: nil, keyEquivalent: ""))
             }
             menu.addItem(.separator())
             let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
-            menu.addItem(NSMenuItem(title: "Mis à jour à \(f.string(from: s.fetchedAt))", action: nil, keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Updated at \(f.string(from: s.fetchedAt))", action: nil, keyEquivalent: ""))
         }
         if let e = lastError {
             menu.addItem(NSMenuItem(title: "⚠︎ \(e.message)", action: nil, keyEquivalent: ""))
         }
         menu.addItem(.separator())
-        if lastError != nil {
-            menu.addItem(withTitle: "Se connecter dans le Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
+        if #available(macOS 14, *) { menu.addItem(.sectionHeader(title: "Menu bar shows")) }
+        else { menu.addItem(NSMenuItem(title: "Menu bar shows", action: nil, keyEquivalent: "")) }
+        for pair in BarPair.allCases {
+            let item = NSMenuItem(title: pair.title, action: #selector(choosePair(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = pair.rawValue
+            item.state = pair == barPair ? .on : .off
+            menu.addItem(item)
         }
-        menu.addItem(withTitle: "Quitter", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(.separator())
+        if lastError != nil {
+            menu.addItem(withTitle: "Sign in with Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
+        }
+        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
+    }
+
+    @objc private func choosePair(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let pair = BarPair(rawValue: raw) else { return }
+        barPair = pair
+        render()
     }
 
     private func swatch(for percent: Double) -> NSImage {
@@ -266,8 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
         if let error = error {
-            let a = NSAlert(); a.messageText = "Impossible d'ouvrir le Terminal"
-            a.informativeText = "Lance toi-même dans un Terminal : claude auth login\n\n\(error)"; a.runModal()
+            let a = NSAlert(); a.messageText = "Could not open Terminal"
+            a.informativeText = "Run this in a Terminal yourself: claude auth login\n\n\(error)"; a.runModal()
         }
     }
 }

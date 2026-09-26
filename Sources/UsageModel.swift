@@ -25,8 +25,30 @@ struct UsageSnapshot: Equatable {
     var fiveHour: UsageWindow? { windows.first { $0.isFiveHour } }
     var weeklyAll: UsageWindow? { windows.first { $0.isWeeklyAll } }
     var weeklyFable: UsageWindow? { windows.first { $0.isFable } }
-    /// Bottom bar: weekly Fable when the API reports it, else weekly all models.
-    var secondBar: UsageWindow? { weeklyFable ?? weeklyAll }
+}
+
+/// Which two windows the menu bar shows, top then bottom. Chosen in the menu, stored in UserDefaults.
+enum BarPair: String, CaseIterable {
+    case fiveHourFable, fiveHourAll, allFable
+
+    static let `default` = BarPair.fiveHourFable
+
+    var title: String {
+        switch self {
+        case .fiveHourFable: return "5-hour + Weekly Fable"
+        case .fiveHourAll: return "5-hour + Weekly all models"
+        case .allFable: return "Weekly all models + Weekly Fable"
+        }
+    }
+
+    /// Missing Fable falls back to weekly all models, or to 5 h when weekly all is already shown.
+    func windows(in s: UsageSnapshot) -> (top: UsageWindow?, bottom: UsageWindow?) {
+        switch self {
+        case .fiveHourFable: return (s.fiveHour, s.weeklyFable ?? s.weeklyAll)
+        case .fiveHourAll: return (s.fiveHour, s.weeklyAll)
+        case .allFable: return (s.weeklyAll, s.weeklyFable ?? s.fiveHour)
+        }
+    }
 }
 
 enum UsageLevel {
@@ -49,9 +71,9 @@ enum UsageParseError: Error, Equatable {
 /// Parses the response of GET https://api.anthropic.com/api/oauth/usage.
 enum UsageParser {
     static let labels: [String: String] = [
-        "five_hour": "5 h",
-        "seven_day": "Hebdo · tous modèles",
-        "seven_day_oauth_apps": "Hebdo · apps OAuth",
+        "five_hour": "5-hour session",
+        "seven_day": "Weekly · all models",
+        "seven_day_oauth_apps": "Weekly · OAuth apps",
     ]
     static let ignoredKeys: Set<String> = ["extra_usage", "seven_day_overage_included"]
 
@@ -59,7 +81,7 @@ enum UsageParser {
         if let l = labels[key] { return l }
         if key.hasPrefix("seven_day_") {
             let model = String(key.dropFirst("seven_day_".count))
-            return "Hebdo · " + model.replacingOccurrences(of: "_", with: " ").capitalized
+            return "Weekly · " + model.replacingOccurrences(of: "_", with: " ").capitalized
         }
         return key.replacingOccurrences(of: "_", with: " ").capitalized
     }
@@ -82,7 +104,7 @@ enum UsageParser {
                   let model = ((item["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String,
                   let pct = number(item["percent"]) ?? number(item["utilization"]) else { continue }
             let key = "seven_day_" + model.lowercased().replacingOccurrences(of: " ", with: "_")
-            windows.append(UsageWindow(key: key, label: "Hebdo · \(model)", percent: pct, resetsAt: parseDate(item["resets_at"])))
+            windows.append(UsageWindow(key: key, label: "Weekly · \(model)", percent: pct, resetsAt: parseDate(item["resets_at"])))
         }
         guard !windows.isEmpty else { throw UsageParseError.noWindows }
         let order = ["five_hour": 0, "seven_day": 1]
@@ -116,14 +138,14 @@ enum UsageParser {
 }
 
 enum TimeFormat {
-    /// "3h 40m", "2j 9h", "12m", "maintenant"
+    /// "3h 40m", "2d 9h", "12m", "now"
     static func remaining(until date: Date, from now: Date = Date()) -> String {
         let secs = Int(date.timeIntervalSince(now))
-        if secs <= 0 { return "maintenant" }
+        if secs <= 0 { return "now" }
         let days = secs / 86400
         let hours = (secs % 86400) / 3600
         let mins = (secs % 3600) / 60
-        if days > 0 { return "\(days)j \(hours)h" }
+        if days > 0 { return "\(days)d \(hours)h" }
         if hours > 0 { return "\(hours)h \(String(format: "%02d", mins))m" }
         return "\(max(mins, 1))m"
     }

@@ -14,15 +14,24 @@ enum BarRenderer {
         }
     }
 
-    /// Two stacked bars: 5-hour on top, weekly below, each followed by its percentage.
-    static func statusImage(fiveHour: Double, weekly: Double) -> NSImage {
+    /// Fill gradient, left to right: the level's system color brightening to a neon tint at the leading edge.
+    static func gradient(for percent: Double) -> (NSColor, NSColor) {
+        switch UsageLevel(percent: percent) {
+        case .ok: return (.systemGreen, NSColor(srgbRed: 0.55, green: 1.0, blue: 0.35, alpha: 1))
+        case .warn: return (.systemOrange, NSColor(srgbRed: 1.0, green: 0.85, blue: 0.2, alpha: 1))
+        case .critical: return (.systemRed, NSColor(srgbRed: 1.0, green: 0.35, blue: 0.6, alpha: 1))
+        }
+    }
+
+    /// Two stacked bars, each followed by its percentage.
+    static func statusImage(top: Double, bottom: Double) -> NSImage {
         // Width follows the widest percentage label so there is no dead space on the right.
-        let labels = [fiveHour, weekly].map { label(for: $0) }
+        let labels = [top, bottom].map { label(for: $0) }
         let textWidth = labels.map { $0.size().width }.max() ?? 0
         let width = ceil(barWidth + textGap + textWidth)
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
-            drawRow(percent: fiveHour, y: 10.5)
-            drawRow(percent: weekly, y: 2.5)
+            drawRow(percent: top, y: 9.5)
+            drawRow(percent: bottom, y: 1.5)
             return true
         }
         image.isTemplate = false
@@ -37,8 +46,9 @@ enum BarRenderer {
 
         let fillW = max(barWidth * CGFloat(p / 100), p > 0 ? barHeight : 0)
         let fill = NSRect(x: 0, y: y, width: fillW, height: barHeight)
-        color(for: p).setFill()
-        NSBezierPath(roundedRect: fill, xRadius: 2.5, yRadius: 2.5).fill()
+        let (start, end) = gradient(for: p)
+        NSGradient(starting: start, ending: end)?
+            .draw(in: NSBezierPath(roundedRect: fill, xRadius: 2.5, yRadius: 2.5), angle: 0)
 
         let text = label(for: p)
         let size = text.size()
