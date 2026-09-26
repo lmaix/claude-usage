@@ -144,8 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `open ClaudeUsageBar.app --args --simulate-signed-out` shows the first-run state without touching the Keychain.
     /// Cleared by "Sign in with Terminal…", so the simulated first run continues like a real one.
     private var simulateSignedOut = CommandLine.arguments.contains("--simulate-signed-out")
-    /// Set by "Sign in with Terminal…": for the next 10 minutes, check every tick whether the login has landed.
-    private var awaitingSignInUntil = Date.distantPast
+    /// Runs every second after "Sign in with Terminal…" until the login lands (or 10 minutes pass).
+    private var signInWatch: Timer?
+    private var signInDeadline = Date.distantPast
+    private var awaitingSignIn: Bool { signInWatch != nil }
     /// Access token of the last sign-in failure, so a stale login is not retried against the API every tick.
     private var failedAccessToken: String?
     static let barPairKey = "barPair"
@@ -185,11 +187,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Every 30 s: fetch only when the poll interval (or a 429 backoff) has elapsed.
     @objc private func tick() {
-        if Date() >= nextAllowedFetch { return refresh() }
-        if lastError?.needsSignIn == true, Date() < awaitingSignInUntil, !simulateSignedOut,
-           let token = Keychain.credentials()?.accessToken, token != failedAccessToken {
-            refresh()
-        }
+        if Date() >= nextAllowedFetch { refresh() }
+    }
+
+    /// Local Keychain check only (no network) until a login other than the rejected one shows up.
+    @objc private func checkSignIn() {
+        guard Date() < signInDeadline else { return stopSignInWatch() }
+        guard let token = Keychain.credentials()?.accessToken, token != failedAccessToken else { return }
+        stopSignInWatch()
+        refresh()
+    }
+
+    private func stopSignInWatch() {
+        signInWatch?.invalidate()
+        signInWatch = nil
+        render()
     }
 
     @objc func refresh() {
@@ -254,8 +266,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             button.toolTip = s.windows.map { "\($0.label): \(Int($0.percent.rounded()))%" }.joined(separator: "\n")
         } else {
-            button.image = BarRenderer.errorImage()
-            button.toolTip = lastError?.message
+            button.image = BarRenderer.errorImage(waiting: awaitingSignIn)
+            button.toolTip = awaitingSignIn ? "Waiting for sign-in in Terminal…" : lastError?.message
         }
     }
 
@@ -279,7 +291,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem(title: "Updated at \(f.string(from: s.fetchedAt))", action: nil, keyEquivalent: ""))
         }
         if let e = lastError {
-            menu.addItem(NSMenuItem(title: "⚠︎ \(e.message)", action: nil, keyEquivalent: ""))
+            let title = awaitingSignIn && snapshot == nil ? "Waiting for sign-in in Terminal…" : "⚠︎ \(e.message)"
+            menu.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
+            // Stays available while waiting, in case the Terminal window was closed.
             if e.needsSignIn {
                 menu.addItem(withTitle: "Sign in with Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
             }
@@ -345,7 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens Terminal and runs `claude auth login`; the CLI stores the login in the Keychain, which we then read.
     @objc private func loginInTerminal() {
         simulateSignedOut = false
-        awaitingSignInUntil = Date().addingTimeInterval(10 * 60)
+        signInDeadline = Date().addingTimeInterval(10 * 60)
+        signInWatch?.invalidate()
+        signInWatch = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(checkSignIn), userInfo: nil, repeats: true)
+        render()
         let script = """
         tell application "Terminal"
             activate

@@ -119,13 +119,15 @@ enum BarRenderer {
         return NSAttributedString(string: "\(Int(min(max(percent, 0), 100).rounded()))%", attributes: attrs)
     }
 
-    static func errorImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: height), flipped: false) { _ in
-            let font = NSFont.systemFont(ofSize: 13, weight: .bold)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.systemOrange]
-            let text = NSAttributedString(string: "C!", attributes: attrs)
-            let size = text.size()
-            text.draw(at: NSPoint(x: 9 - size.width / 2, y: height / 2 - size.height / 2))
+    /// "C!" in orange when signed out; `waiting` shows a gray "C…" while a sign-in is in progress.
+    static func errorImage(waiting: Bool = false) -> NSImage {
+        let font = NSFont.systemFont(ofSize: 13, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: waiting ? NSColor.secondaryLabelColor : NSColor.systemOrange]
+        let text = NSAttributedString(string: waiting ? "C…" : "C!", attributes: attrs)
+        let size = text.size()
+        let width = max(18, ceil(size.width) + 2)
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            text.draw(at: NSPoint(x: width / 2 - size.width / 2, y: height / 2 - size.height / 2))
             return true
         }
         image.isTemplate = false

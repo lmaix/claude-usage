@@ -36,18 +36,12 @@ dependency.
 
 ## First launch
 
-1. If you have never logged in to Claude Code, run:
+If you are already logged in to Claude Code, there is nothing to do: the app
+shows your usage right away, with no Keychain password prompt.
 
-   ```bash
-   claude auth login
-   ```
-
-   The icon shows **C!** while the app is not connected; its menu also has a
-   *Sign in with Terminal…* item that runs this command for you.
-2. macOS asks whether ClaudeUsageBar may read the **Claude Code-credentials**
-   Keychain item: choose **Always Allow**. This happens once: the app then keeps
-   its own copy of the session in its own Keychain item and never modifies
-   Claude Code's.
+Otherwise the icon shows **C!**. Click it, then **Sign in with Terminal…**: it
+opens Terminal and runs `claude auth login`. The icon turns to a gray **C…**
+while it waits, and your usage appears within a second of logging in.
 
 `claude setup-token` does not work: that token only carries the
 `user:inference` scope, and the usage endpoint requires `user:profile`.
@@ -100,9 +94,12 @@ General → Login Items**.
 - Polled every 10 minutes and when the Mac wakes up. On HTTP 429 the app honors
   `Retry-After`, otherwise backs off 5, 10, 20… up to 30 minutes.
 - The last result is cached, so a restart shows your bars right away.
+- The app reads Claude Code's login once and keeps its own copy in the Keychain
+  (service `ClaudeUsageBar`); it never modifies Claude Code's item. All Keychain
+  access goes through `/usr/bin/security`, the tool Claude Code itself uses,
+  which is why there is no password prompt.
 - When the session is about to expire (or on 401) the app renews it with the
-  OAuth refresh token and stores the new tokens in its own Keychain item
-  (service `ClaudeUsageBar`).
+  OAuth refresh token and updates its own copy.
 - Nothing is sent anywhere except to Anthropic.
 - Log: `~/Library/Logs/ClaudeUsageBar.log`.
 

@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 /// Claude Code's own login, stored by `claude auth login` in the macOS Keychain.
 /// We read it, and write it back after a refresh so the CLI stays in sync.
@@ -43,6 +42,9 @@ struct ClaudeCodeCredentials {
     }
 }
 
+/// All Keychain access goes through `/usr/bin/security`, the tool Claude Code itself uses: its login item trusts that
+/// tool, so reading it never shows a password prompt. The app's own copy is stored the same way, so it stays readable
+/// across rebuilds and updates (an item created through SecItem is tied to the app's signature and prompts when it changes).
 enum Keychain {
     static let claudeCodeService = "Claude Code-credentials"
     static let ownService = "ClaudeUsageBar"
@@ -59,51 +61,45 @@ enum Keychain {
         return c
     }
 
+    /// Replaces the app's copy. Delete-then-add so an item left by an older SecItem-based version gets the new access list.
     @discardableResult
     static func writeCredentials(_ data: Data) -> Bool {
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: ownService,
-            kSecAttrAccount as String: ownAccount,
-        ]
-        let st = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if st == errSecSuccess { return true }
-        guard st == errSecItemNotFound else { return false }
-        var add = base
-        add[kSecValueData as String] = data
-        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        forgetOwnSession()
+        // Sent on stdin (interactive mode), hex-encoded, so the secret never appears in a process's arguments.
+        let hex = data.map { String(format: "%02x", $0) }.joined()
+        _ = security(["-i"], stdin: "add-generic-password -s \(ownService) -a \(ownAccount) -X \(hex)\n")
+        return read(service: ownService, account: ownAccount) == data   // interactive mode exits 0 even when a command fails
     }
 
     /// Drops the app's own copy so the next fetch re-bootstraps from Claude Code's login (after `claude auth login`).
     static func forgetOwnSession() {
-        let q: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: ownService,
-            kSecAttrAccount as String: ownAccount,
-        ]
-        SecItemDelete(q as CFDictionary)
+        _ = security(["delete-generic-password", "-s", ownService, "-a", ownAccount])
     }
 
     /// Removes the token item an earlier version of this app stored (setup-token, no longer used).
     static func deleteLegacyItem() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
-            kSecAttrAccount as String: "oauth-token",
-        ]
-        SecItemDelete(query as CFDictionary)
+        _ = security(["delete-generic-password", "-s", legacyService, "-a", "oauth-token"])
     }
 
     private static func read(service: String, account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
-        return result as? Data
+        guard let out = security(["find-generic-password", "-s", service, "-a", account, "-w"]) else { return nil }
+        let text = out.trimmingCharacters(in: .newlines)
+        return text.isEmpty ? nil : Data(text.utf8)
+    }
+
+    /// Runs /usr/bin/security; returns stdout on success, nil on a non-zero exit (e.g. item not found).
+    private static func security(_ args: [String], stdin: String? = nil) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        p.arguments = args
+        let out = Pipe(), input = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        if stdin != nil { p.standardInput = input }
+        do { try p.run() } catch { return nil }
+        if let s = stdin { input.fileHandleForWriting.write(Data(s.utf8)); try? input.fileHandleForWriting.close() }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return p.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
     }
 }
