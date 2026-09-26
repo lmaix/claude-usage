@@ -58,25 +58,35 @@ Everything is in the menu that opens when you click the icon.
 
 ### Style
 
-- **Bars** (default): two stacked bars with their percentage.
-- **Rings**: one ring per limit — **5** for the 5-hour session, **W** for weekly
-  all models, **F** for weekly Fable — so all three fit at once. Exact
-  percentages stay in the menu and the tooltip.
+- **Rings** (default): one ring per limit — **5** for the 5-hour session, **W**
+  for weekly all models, **F** for weekly Fable. Exact percentages stay in the
+  menu and the tooltip.
+- **Bars**: two stacked bars with their percentage.
 
 ![Rings](screenshots/rings.png)
 
-### Displayed bars
+### Menu bar shows
 
-With the Bars style, under **Menu bar shows**, pick which two limits appear in the menu bar, top then bottom:
+Pick which limits appear in the menu bar. With **Rings**:
+
+| Choice | Rings |
+| --- | --- |
+| 5-hour + Weekly all models + Weekly Fable (default) | 5 · W · F |
+| 5-hour + Weekly all models | 5 · W |
+| 5-hour + Weekly Fable | 5 · F |
+| Weekly all models + Weekly Fable | W · F |
+
+With **Bars**, top then bottom:
 
 | Choice | Top bar | Bottom bar |
 | --- | --- | --- |
-| 5-hour + Weekly Fable (default) | 5-hour session | Weekly, Fable |
 | 5-hour + Weekly all models | 5-hour session | Weekly, all models |
+| 5-hour + Weekly Fable (default) | 5-hour session | Weekly, Fable |
 | Weekly all models + Weekly Fable | Weekly, all models | Weekly, Fable |
 
-The choice is saved and applied immediately. If your plan has no Fable weekly
-limit, the app shows another available limit in its place.
+Each style remembers its own choice, applied immediately. If your plan has no
+Fable weekly limit, the F ring is left out, and the Bars style shows another
+available limit in its place.
 
 ### Launch at login
 

@@ -32,7 +32,7 @@ let noFable = try! UsageParser.parse("{\"five_hour\":{\"utilization\":5},\"seven
 
 // MARK: displayed bar pair
 check(BarPair.default == .fiveHourFable, "default: 5-hour + Fable")
-check(BarPair.allCases.count == 3 && Set(BarPair.allCases.map(\.title)).count == 3, "three choices with distinct titles")
+check(BarPair.allCases == [.fiveHourAll, .fiveHourFable, .allFable] && Set(BarPair.allCases.map(\.title)).count == 3, "bar choices in 5, W, F order")
 check(BarPair(rawValue: "inconnu") == nil, "unknown stored value rejected")
 let p1 = BarPair.fiveHourFable.windows(in: snap), p2 = BarPair.fiveHourAll.windows(in: snap), p3 = BarPair.allFable.windows(in: snap)
 check(p1.top?.key == "five_hour" && p1.bottom?.key == "seven_day_fable", "5-hour + Fable")
@@ -43,11 +43,16 @@ check(q1.top?.key == "five_hour" && q1.bottom?.key == "seven_day", "no Fable: 5-
 check(q3.top?.key == "seven_day" && q3.bottom?.key == "five_hour", "no Fable: never the same bar twice")
 
 // MARK: ring style
-check(BarStyle.default == .bars && BarStyle.allCases.map(\.title) == ["Bars", "Rings"], "styles: Bars (default), Rings")
+check(BarStyle.default == .rings && BarStyle.allCases.map(\.title) == ["Rings", "Bars"], "styles: Rings (default), Bars")
 check(BarStyle(rawValue: "unknown") == nil, "unknown stored style rejected")
-let r1 = BarStyle.rings(in: snap)
+check(RingSet.default == .all && RingSet.allCases == [.all, .fiveHourAll, .fiveHourFable, .allFable], "ring choices: all three (default), 5+W, 5+F, W+F")
+check(Set(RingSet.allCases.map(\.title)).count == 4, "ring choices have distinct titles")
+let r1 = RingSet.all.rings(in: snap)
 check(r1.map(\.letter) == ["5", "W", "F"] && r1.map(\.percent) == [2, 28, 48], "rings: 5, W, F with their percentages")
-check(BarStyle.rings(in: noFable).map(\.letter) == ["5", "W"], "no Fable: two rings")
+check(RingSet.fiveHourAll.rings(in: snap).map(\.letter) == ["5", "W"], "5 + W")
+check(RingSet.fiveHourFable.rings(in: snap).map(\.letter) == ["5", "F"], "5 + F")
+check(RingSet.allFable.rings(in: snap).map(\.letter) == ["W", "F"], "W + F")
+check(RingSet.all.rings(in: noFable).map(\.letter) == ["5", "W"], "no Fable: F ring dropped")
 let ringsImg = BarRenderer.ringsImage(r1)
 check(ringsImg.size.height <= 22 && ringsImg.size.width > BarRenderer.ringsImage(Array(r1.prefix(2))).size.width, "ring image grows with ring count")
 

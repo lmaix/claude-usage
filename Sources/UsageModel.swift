@@ -29,7 +29,7 @@ struct UsageSnapshot: Equatable {
 
 /// Which two windows the menu bar shows, top then bottom. Chosen in the menu, stored in UserDefaults.
 enum BarPair: String, CaseIterable {
-    case fiveHourFable, fiveHourAll, allFable
+    case fiveHourAll, fiveHourFable, allFable   // menu order: 5, W, F
 
     static let `default` = BarPair.fiveHourFable
 
@@ -53,9 +53,9 @@ enum BarPair: String, CaseIterable {
 
 /// How the menu bar draws usage: two stacked bars (see BarPair) or one ring per limit.
 enum BarStyle: String, CaseIterable {
-    case bars, rings
+    case rings, bars
 
-    static let `default` = BarStyle.bars
+    static let `default` = BarStyle.rings
 
     var title: String {
         switch self {
@@ -64,11 +64,34 @@ enum BarStyle: String, CaseIterable {
         }
     }
 
-    /// 5-hour, weekly all models, weekly Fable — skipping any limit the plan does not report.
-    static func rings(in s: UsageSnapshot) -> [(letter: String, percent: Double)] {
-        [("5", s.fiveHour), ("W", s.weeklyAll), ("F", s.weeklyFable)].compactMap { letter, w in
-            w.map { (letter, $0.percent) }
+}
+
+/// Which limits the Rings style shows, always in 5, W, F order. Chosen in the menu, stored in UserDefaults.
+enum RingSet: String, CaseIterable {
+    case all, fiveHourAll, fiveHourFable, allFable
+
+    static let `default` = RingSet.all
+
+    var title: String {
+        switch self {
+        case .all: return "5-hour + Weekly all models + Weekly Fable"
+        case .fiveHourAll: return "5-hour + Weekly all models"
+        case .fiveHourFable: return "5-hour + Weekly Fable"
+        case .allFable: return "Weekly all models + Weekly Fable"
         }
+    }
+
+    /// Skips any limit the plan does not report.
+    func rings(in s: UsageSnapshot) -> [(letter: String, percent: Double)] {
+        let all: [(String, UsageWindow?)] = [("5", s.fiveHour), ("W", s.weeklyAll), ("F", s.weeklyFable)]
+        let letters: Set<String>
+        switch self {
+        case .all: letters = ["5", "W", "F"]
+        case .fiveHourAll: letters = ["5", "W"]
+        case .fiveHourFable: letters = ["5", "F"]
+        case .allFable: letters = ["W", "F"]
+        }
+        return all.compactMap { letter, w in letters.contains(letter) ? w.map { (letter, $0.percent) } : nil }
     }
 }
 

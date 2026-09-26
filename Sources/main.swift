@@ -135,6 +135,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let pollInterval: TimeInterval = 10 * 60
     static let barPairKey = "barPair"
     static let barStyleKey = "barStyle"
+    static let ringSetKey = "ringSet"
+    private var ringSet: RingSet {
+        get { UserDefaults.standard.string(forKey: Self.ringSetKey).flatMap(RingSet.init(rawValue:)) ?? .default }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.ringSetKey) }
+    }
     private var barStyle: BarStyle {
         get { UserDefaults.standard.string(forKey: Self.barStyleKey).flatMap(BarStyle.init(rawValue:)) ?? .default }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.barStyleKey) }
@@ -224,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let bars = barPair.windows(in: s)
                 button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0)
             case .rings:
-                button.image = BarRenderer.ringsImage(BarStyle.rings(in: s))
+                button.image = BarRenderer.ringsImage(ringSet.rings(in: s))
             }
             button.toolTip = s.windows.map { "\($0.label): \(Int($0.percent.rounded()))%" }.joined(separator: "\n")
         } else {
@@ -258,7 +263,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         addSection("Style", to: menu, choices: BarStyle.allCases.map { ($0.title, $0.rawValue, $0 == barStyle) },
                    action: #selector(chooseStyle(_:)))
-        if barStyle == .bars {
+        switch barStyle {
+        case .rings:
+            addSection("Menu bar shows", to: menu, choices: RingSet.allCases.map { ($0.title, $0.rawValue, $0 == ringSet) },
+                       action: #selector(chooseRingSet(_:)))
+        case .bars:
             addSection("Menu bar shows", to: menu, choices: BarPair.allCases.map { ($0.title, $0.rawValue, $0 == barPair) },
                        action: #selector(choosePair(_:)))
         }
@@ -286,6 +295,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func chooseStyle(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let style = BarStyle(rawValue: raw) else { return }
         barStyle = style
+        render()
+    }
+
+    @objc private func chooseRingSet(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let set = RingSet(rawValue: raw) else { return }
+        ringSet = set
         render()
     }
 
