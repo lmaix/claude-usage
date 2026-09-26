@@ -55,6 +55,62 @@ enum BarRenderer {
         text.draw(at: NSPoint(x: barWidth + textGap, y: y + barHeight / 2 - size.height / 2 + 0.5))
     }
 
+    static let ringDiameter: CGFloat = 16
+    static let ringGap: CGFloat = 3
+    static let ringLineWidth: CGFloat = 2.2
+
+    /// One ring per limit, filled clockwise from 12 o'clock, with a letter in the middle.
+    static func ringsImage(_ rings: [(letter: String, percent: Double)]) -> NSImage {
+        let n = CGFloat(rings.count)
+        let width = n * ringDiameter + max(n - 1, 0) * ringGap
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            for (i, r) in rings.enumerated() {
+                let center = NSPoint(x: CGFloat(i) * (ringDiameter + ringGap) + ringDiameter / 2, y: height / 2)
+                drawRing(percent: r.percent, letter: r.letter, center: center)
+            }
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private static func drawRing(percent: Double, letter: String, center: NSPoint) {
+        let p = min(max(percent, 0), 100)
+        let radius = (ringDiameter - ringLineWidth) / 2 - 0.5
+        let track = NSBezierPath()
+        track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
+        track.lineWidth = ringLineWidth
+        NSColor.labelColor.withAlphaComponent(0.22).setStroke()
+        track.stroke()
+
+        // NSGradient cannot follow an arc: draw short segments, each blended a bit further toward the end color.
+        if p > 0 {
+            let (start, end) = gradient(for: p)
+            let sweep = CGFloat(p) * 3.6
+            let segments = max(Int(p / 2), 1)
+            for i in 0..<segments {
+                let t0 = CGFloat(i) / CGFloat(segments), t1 = CGFloat(i + 1) / CGFloat(segments)
+                let arc = NSBezierPath()
+                // Each segment starts 1° early so neighbors overlap and leave no seam.
+                arc.appendArc(withCenter: center, radius: radius,
+                              startAngle: 90 - t0 * sweep + (i == 0 ? 0 : 1), endAngle: 90 - t1 * sweep, clockwise: true)
+                arc.lineWidth = ringLineWidth
+                arc.lineCapStyle = (i == 0 || i == segments - 1) ? .round : .butt
+                (start.blended(withFraction: t1, of: end) ?? end).setStroke()
+                arc.stroke()
+            }
+        }
+
+        let font = NSFont.systemFont(ofSize: 6, weight: .bold)
+        let text = NSAttributedString(string: letter, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        // Center the glyphs' ink, not the line box: capitals and digits have no descender.
+        let line = CTLineCreateWithAttributedString(text)
+        let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.textPosition = CGPoint(x: center.x - ink.midX, y: center.y - ink.midY)
+        CTLineDraw(line, ctx)
+    }
+
     static func label(for percent: Double) -> NSAttributedString {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]

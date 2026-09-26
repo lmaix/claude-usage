@@ -134,6 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var backoff: TimeInterval = 5 * 60
     static let pollInterval: TimeInterval = 10 * 60
     static let barPairKey = "barPair"
+    static let barStyleKey = "barStyle"
+    private var barStyle: BarStyle {
+        get { UserDefaults.standard.string(forKey: Self.barStyleKey).flatMap(BarStyle.init(rawValue:)) ?? .default }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.barStyleKey) }
+    }
     private var barPair: BarPair {
         get { UserDefaults.standard.string(forKey: Self.barPairKey).flatMap(BarPair.init(rawValue:)) ?? .default }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.barPairKey) }
@@ -214,8 +219,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func render() {
         guard let button = statusItem.button else { return }
         if let s = snapshot {
-            let bars = barPair.windows(in: s)
-            button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0)
+            switch barStyle {
+            case .bars:
+                let bars = barPair.windows(in: s)
+                button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0)
+            case .rings:
+                button.image = BarRenderer.ringsImage(BarStyle.rings(in: s))
+            }
             button.toolTip = s.windows.map { "\($0.label): \(Int($0.percent.rounded()))%" }.joined(separator: "\n")
         } else {
             button.image = BarRenderer.errorImage()
@@ -246,21 +256,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem(title: "⚠︎ \(e.message)", action: nil, keyEquivalent: ""))
         }
         menu.addItem(.separator())
-        if #available(macOS 14, *) { menu.addItem(.sectionHeader(title: "Menu bar shows")) }
-        else { menu.addItem(NSMenuItem(title: "Menu bar shows", action: nil, keyEquivalent: "")) }
-        for pair in BarPair.allCases {
-            let item = NSMenuItem(title: pair.title, action: #selector(choosePair(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = pair.rawValue
-            item.state = pair == barPair ? .on : .off
-            menu.addItem(item)
+        addSection("Style", to: menu, choices: BarStyle.allCases.map { ($0.title, $0.rawValue, $0 == barStyle) },
+                   action: #selector(chooseStyle(_:)))
+        if barStyle == .bars {
+            addSection("Menu bar shows", to: menu, choices: BarPair.allCases.map { ($0.title, $0.rawValue, $0 == barPair) },
+                       action: #selector(choosePair(_:)))
         }
-        menu.addItem(.separator())
         if lastError != nil {
             menu.addItem(withTitle: "Sign in with Terminal…", action: #selector(loginInTerminal), keyEquivalent: "").target = self
         }
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
+    }
+
+    /// A header followed by mutually exclusive items, the selected one checked.
+    private func addSection(_ title: String, to menu: NSMenu, choices: [(title: String, value: String, selected: Bool)], action: Selector) {
+        if #available(macOS 14, *) { menu.addItem(.sectionHeader(title: title)) }
+        else { menu.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: "")) }
+        for c in choices {
+            let item = NSMenuItem(title: c.title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = c.value
+            item.state = c.selected ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+    }
+
+    @objc private func chooseStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let style = BarStyle(rawValue: raw) else { return }
+        barStyle = style
+        render()
     }
 
     @objc private func choosePair(_ sender: NSMenuItem) {

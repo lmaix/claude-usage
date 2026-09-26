@@ -42,6 +42,15 @@ let q1 = BarPair.fiveHourFable.windows(in: noFable), q3 = BarPair.allFable.windo
 check(q1.top?.key == "five_hour" && q1.bottom?.key == "seven_day", "no Fable: 5-hour + all models")
 check(q3.top?.key == "seven_day" && q3.bottom?.key == "five_hour", "no Fable: never the same bar twice")
 
+// MARK: ring style
+check(BarStyle.default == .bars && BarStyle.allCases.map(\.title) == ["Bars", "Rings"], "styles: Bars (default), Rings")
+check(BarStyle(rawValue: "unknown") == nil, "unknown stored style rejected")
+let r1 = BarStyle.rings(in: snap)
+check(r1.map(\.letter) == ["5", "W", "F"] && r1.map(\.percent) == [2, 28, 48], "rings: 5, W, F with their percentages")
+check(BarStyle.rings(in: noFable).map(\.letter) == ["5", "W"], "no Fable: two rings")
+let ringsImg = BarRenderer.ringsImage(r1)
+check(ringsImg.size.height <= 22 && ringsImg.size.width > BarRenderer.ringsImage(Array(r1.prefix(2))).size.width, "ring image grows with ring count")
+
 // MARK: gradients
 for p in [10.0, 70, 95] {
     let (a, b) = BarRenderer.gradient(for: p)

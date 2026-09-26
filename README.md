@@ -56,9 +56,18 @@ dependency.
 
 Everything is in the menu that opens when you click the icon.
 
+### Style
+
+- **Bars** (default): two stacked bars with their percentage.
+- **Rings**: one ring per limit — **5** for the 5-hour session, **W** for weekly
+  all models, **F** for weekly Fable — so all three fit at once. Exact
+  percentages stay in the menu and the tooltip.
+
+![Rings](screenshots/rings.png)
+
 ### Displayed bars
 
-Under **Menu bar shows**, pick which two limits appear in the menu bar, top then bottom:
+With the Bars style, under **Menu bar shows**, pick which two limits appear in the menu bar, top then bottom:
 
 | Choice | Top bar | Bottom bar |
 | --- | --- | --- |

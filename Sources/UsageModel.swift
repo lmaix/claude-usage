@@ -51,6 +51,27 @@ enum BarPair: String, CaseIterable {
     }
 }
 
+/// How the menu bar draws usage: two stacked bars (see BarPair) or one ring per limit.
+enum BarStyle: String, CaseIterable {
+    case bars, rings
+
+    static let `default` = BarStyle.bars
+
+    var title: String {
+        switch self {
+        case .bars: return "Bars"
+        case .rings: return "Rings"
+        }
+    }
+
+    /// 5-hour, weekly all models, weekly Fable — skipping any limit the plan does not report.
+    static func rings(in s: UsageSnapshot) -> [(letter: String, percent: Double)] {
+        [("5", s.fiveHour), ("W", s.weeklyAll), ("F", s.weeklyFable)].compactMap { letter, w in
+            w.map { (letter, $0.percent) }
+        }
+    }
+}
+
 enum UsageLevel {
     case ok, warn, critical
 
