@@ -55,17 +55,19 @@ enum BarRenderer {
         text.draw(at: NSPoint(x: barWidth + textGap, y: y + barHeight / 2 - size.height / 2 + 0.5))
     }
 
-    static let ringDiameter: CGFloat = 16
-    static let ringGap: CGFloat = 3
-    static let ringLineWidth: CGFloat = 2.2
+    // Rings fill the menu bar's height, like the system icons next to them.
+    static let ringsHeight: CGFloat = 22
+    static let ringDiameter: CGFloat = 20
+    static let ringGap: CGFloat = 4
+    static let ringLineWidth: CGFloat = 2.6
 
     /// One ring per limit, filled clockwise from 12 o'clock, with a letter in the middle.
     static func ringsImage(_ rings: [(letter: String, percent: Double)]) -> NSImage {
         let n = CGFloat(rings.count)
         let width = n * ringDiameter + max(n - 1, 0) * ringGap
-        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+        let image = NSImage(size: NSSize(width: width, height: ringsHeight), flipped: false) { _ in
             for (i, r) in rings.enumerated() {
-                let center = NSPoint(x: CGFloat(i) * (ringDiameter + ringGap) + ringDiameter / 2, y: height / 2)
+                let center = NSPoint(x: CGFloat(i) * (ringDiameter + ringGap) + ringDiameter / 2, y: ringsHeight / 2 - 1)   // 1 pt low: reads as centered next to system icons
                 drawRing(percent: r.percent, letter: r.letter, center: center)
             }
             return true
@@ -101,7 +103,7 @@ enum BarRenderer {
             }
         }
 
-        let font = NSFont.systemFont(ofSize: 6, weight: .bold)
+        let font = NSFont.systemFont(ofSize: 7.5, weight: .bold)
         let text = NSAttributedString(string: letter, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
         // Center the glyphs' ink, not the line box: capitals and digits have no descender.
         let line = CTLineCreateWithAttributedString(text)
