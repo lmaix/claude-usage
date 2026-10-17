@@ -12,8 +12,17 @@ Prefer bars? Switch the style in the menu:
 
 ![Bars style](screenshots/menubar-bars.png)
 
-Colors follow your usage: green to neon green below 60 %, orange to yellow from
-60 to 85 %, red to pink above 85 %.
+Colors follow your usage. For the 5-hour session: green to neon green below
+60 %, orange to yellow from 60 to 85 %, red to pink above 85 %.
+
+Weekly limits (all models and Fable) are compared to the **pace**: the share of
+the week already elapsed. With 2d 17h left before the reset, the pace is
+100 × (1 − 65 h / 168 h) ≈ 61 %. A white tick on the bar or ring marks it, and
+the menu shows it next to the usage: `Weekly · all models: 11% · target 61% (−50 pts)`.
+
+- green: usage at or below the pace (or below 10 %, so a fresh week starts green)
+- orange: up to 10 points above the pace
+- red: more than 10 points above the pace
 
 ## Requirements
 

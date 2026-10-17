@@ -260,7 +260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch barStyle {
             case .bars:
                 let bars = barPair.windows(in: s)
-                button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0)
+                button.image = BarRenderer.statusImage(top: bars.top?.percent ?? 0, bottom: bars.bottom?.percent ?? 0,
+                                                       topPace: bars.top?.pace(), bottomPace: bars.bottom?.pace())
             case .rings:
                 button.image = BarRenderer.ringsImage(ringSet.rings(in: s))
             }
@@ -277,9 +278,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         if let s = snapshot {
             for w in s.windows {
-                let reset = w.resetsAt.map { " · resets in \(TimeFormat.remaining(until: $0))" } ?? ""
-                let item = NSMenuItem(title: "\(w.label): \(Int(w.percent.rounded()))%\(reset)", action: nil, keyEquivalent: "")
-                item.image = swatch(for: w.percent)
+                let item = NSMenuItem(title: w.menuTitle(), action: nil, keyEquivalent: "")
+                item.image = swatch(for: w.level())
                 menu.addItem(item)
             }
             if let e = s.extra, e.enabled {
@@ -348,9 +348,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render()
     }
 
-    private func swatch(for percent: Double) -> NSImage {
+    private func swatch(for level: UsageLevel) -> NSImage {
         NSImage(size: NSSize(width: 10, height: 10), flipped: false) { _ in
-            BarRenderer.color(for: percent).setFill()
+            BarRenderer.color(for: level).setFill()
             NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: 10, height: 10)).fill()
             return true
         }
