@@ -9,6 +9,30 @@ struct UsageWindow: Equatable {
     var isFiveHour: Bool { key == "five_hour" }
     var isWeeklyAll: Bool { key == "seven_day" }
     var isFable: Bool { key.hasPrefix("seven_day") && key.lowercased().contains("fable") }
+    var isWeekly: Bool { key.hasPrefix("seven_day") }
+
+    static let weekLength: TimeInterval = 7 * 86400
+
+    /// Share of the weekly window already elapsed, in percent: the usage you would be at if you spread it evenly.
+    /// Nil for the 5-hour window, or when the reset time is unknown.
+    func pace(now: Date = Date()) -> Double? {
+        guard isWeekly, let r = resetsAt else { return nil }
+        return min(max(100 * (1 - r.timeIntervalSince(now) / Self.weekLength), 0), 100)
+    }
+
+    func level(now: Date = Date()) -> UsageLevel { UsageLevel(percent: percent, pace: pace(now: now)) }
+
+    /// "Weekly · all models: 11% · target 61% (−50 pts) · resets in 2d 17h"
+    func menuTitle(now: Date = Date()) -> String {
+        var t = "\(label): \(Int(percent.rounded()))%"
+        if let p = pace(now: now) {
+            let diff = Int(percent.rounded()) - Int(p.rounded())
+            let sign = diff > 0 ? "+" : diff < 0 ? "−" : "±"
+            t += " · target \(Int(p.rounded()))% (\(sign)\(abs(diff)) pts)"
+        }
+        if let r = resetsAt { t += " · resets in \(TimeFormat.remaining(until: r, from: now))" }
+        return t
+    }
 }
 
 struct ExtraUsage: Equatable {
@@ -82,7 +106,7 @@ enum RingSet: String, CaseIterable {
     }
 
     /// Skips any limit the plan does not report.
-    func rings(in s: UsageSnapshot) -> [(letter: String, percent: Double)] {
+    func rings(in s: UsageSnapshot, now: Date = Date()) -> [(letter: String, percent: Double, pace: Double?)] {
         let all: [(String, UsageWindow?)] = [("5", s.fiveHour), ("W", s.weeklyAll), ("F", s.weeklyFable)]
         let letters: Set<String>
         switch self {
@@ -91,14 +115,26 @@ enum RingSet: String, CaseIterable {
         case .fiveHourFable: letters = ["5", "F"]
         case .allFable: letters = ["W", "F"]
         }
-        return all.compactMap { letter, w in letters.contains(letter) ? w.map { (letter, $0.percent) } : nil }
+        return all.compactMap { letter, w in letters.contains(letter) ? w.map { (letter, $0.percent, $0.pace(now: now)) } : nil }
     }
 }
 
 enum UsageLevel {
     case ok, warn, critical
 
-    init(percent: Double) {
+    /// How far above the weekly pace usage may go before turning red.
+    static let paceMargin: Double = 10
+    /// Below this, weekly usage stays green: right after a reset the pace is near 0 and any use would be "ahead".
+    static let paceFloor: Double = 10
+
+    /// Without a pace (5-hour window): fixed thresholds. With one (weekly windows): compared to the elapsed share of the week.
+    init(percent: Double, pace: Double? = nil) {
+        if let pace = pace {
+            if percent < Self.paceFloor || percent <= pace { self = .ok }
+            else if percent <= pace + Self.paceMargin { self = .warn }
+            else { self = .critical }
+            return
+        }
         switch percent {
         case ..<60: self = .ok
         case ..<85: self = .warn

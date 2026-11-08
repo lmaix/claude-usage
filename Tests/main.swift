@@ -57,11 +57,11 @@ let ringsImg = BarRenderer.ringsImage(r1)
 check(ringsImg.size.height <= 22 && ringsImg.size.width > BarRenderer.ringsImage(Array(r1.prefix(2))).size.width, "ring image grows with ring count")
 
 // MARK: gradients
-for p in [10.0, 70, 95] {
-    let (a, b) = BarRenderer.gradient(for: p)
-    check(a != b, "two-color gradient at \(Int(p))%")
+for level in [UsageLevel.ok, .warn, .critical] {
+    let (a, b) = BarRenderer.gradient(for: level)
+    check(a != b, "two-color gradient at \(level)")
 }
-check(BarRenderer.gradient(for: 10).0 != BarRenderer.gradient(for: 95).0, "gradient depends on level")
+check(BarRenderer.gradient(for: .ok).0 != BarRenderer.gradient(for: .critical).0, "gradient depends on level")
 
 check((try? UsageParser.parse("nope".data(using: .utf8)!)) == nil, "invalid JSON -> error")
 do { _ = try UsageParser.parse("{\"a\":1}".data(using: .utf8)!); check(false, "no window -> error") }
@@ -69,6 +69,26 @@ catch let e as UsageParseError { check(e == .noWindows, "no window -> noWindows"
 catch { check(false, "wrong error type") }
 
 check(UsageLevel(percent: 59.9) == .ok && UsageLevel(percent: 60) == .warn && UsageLevel(percent: 85) == .critical, "color thresholds")
+
+// MARK: weekly pace
+check(UsageLevel(percent: 11, pace: 61) == .ok && UsageLevel(percent: 61, pace: 61) == .ok, "at or below pace: green")
+check(UsageLevel(percent: 66, pace: 61) == .warn && UsageLevel(percent: 71, pace: 61) == .warn, "up to 10 pts above pace: orange")
+check(UsageLevel(percent: 72, pace: 61) == .critical, "more than 10 pts above pace: red")
+check(UsageLevel(percent: 9, pace: 1) == .ok && UsageLevel(percent: 11, pace: 1) == .warn, "below 10 % stays green right after a reset")
+check(UsageLevel(percent: 95, pace: 99) == .ok, "pace replaces the fixed thresholds")
+let weekly = UsageWindow(key: "seven_day", label: "Weekly · all models", percent: 11, resetsAt: now.addingTimeInterval(65 * 3600))
+check(abs(weekly.pace(now: now)! - 61.31) < 0.01, "2d 17h left: pace 61 %")
+check(weekly.level(now: now) == .ok, "11 % at pace 61 %: green")
+check(weekly.menuTitle(now: now) == "Weekly · all models: 11% · target 61% (−50 pts) · resets in 2d 17h", "menu line with target")
+let fableAhead = UsageWindow(key: "seven_day_fable", label: "Weekly · Fable", percent: 80, resetsAt: now.addingTimeInterval(65 * 3600))
+check(fableAhead.level(now: now) == .critical && fableAhead.menuTitle(now: now).contains("target 61% (+19 pts)"), "Fable gets a pace too")
+check(UsageWindow(key: "seven_day", label: "W", percent: 1, resetsAt: now.addingTimeInterval(-60)).pace(now: now) == 100, "past reset: pace capped at 100")
+check(UsageWindow(key: "seven_day", label: "W", percent: 1, resetsAt: nil).pace(now: now) == nil, "no reset time: no pace")
+let five = UsageWindow(key: "five_hour", label: "5-hour session", percent: 70, resetsAt: now.addingTimeInterval(3600))
+check(five.pace(now: now) == nil && five.level(now: now) == .warn, "5-hour: no pace, fixed thresholds")
+check(five.menuTitle(now: now) == "5-hour session: 70% · resets in 1h 00m", "5-hour menu line unchanged")
+let paced = RingSet.all.rings(in: snap, now: now)
+check(paced[0].pace == nil && paced[1].pace != nil && paced[2].pace != nil, "rings: pace on W and F only")
 check(TimeFormat.remaining(until: now.addingTimeInterval(3*3600 + 40*60), from: now) == "3h 40m", "3h 40m")
 check(TimeFormat.remaining(until: now.addingTimeInterval(2*86400 + 9*3600), from: now) == "2d 9h", "2d 9h")
 check(TimeFormat.remaining(until: now.addingTimeInterval(-5), from: now) == "now", "past -> now")
